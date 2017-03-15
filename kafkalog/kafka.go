@@ -159,7 +159,10 @@ func Init(hosts []string, duration, queueLen int) error {
 		var number uint64 = 0
 		go func() {
 			for log := range kp.logChan {
-				logline := append(log.Line, '\n')
+				logline := log.Line
+				if !log.Partial {
+					logline = append(log.Line, '\n')
+				}
 
 				msg := &sarama.ProducerMessage{
 					Topic:     log.ContainerID,
@@ -170,6 +173,7 @@ func Init(hosts []string, duration, queueLen int) error {
 				kp.Lock()
 				if kp.producer == nil {
 					kp.Unlock()
+					logger.PutMessage(log)
 					continue
 				}
 
@@ -186,6 +190,7 @@ func Init(hosts []string, duration, queueLen int) error {
 					number++
 				}
 				kp.Unlock()
+				logger.PutMessage(log)
 			}
 		}()
 
