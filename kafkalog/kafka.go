@@ -173,7 +173,7 @@ func Init(hosts []string, duration, queueLen int) error {
 				kp.Lock()
 				if kp.producer == nil {
 					kp.Unlock()
-					logger.PutMessage(log)
+					//logger.PutMessage(log)
 					continue
 				}
 
@@ -190,7 +190,7 @@ func Init(hosts []string, duration, queueLen int) error {
 					number++
 				}
 				kp.Unlock()
-				logger.PutMessage(log)
+				//logger.PutMessage(log)
 			}
 		}()
 
