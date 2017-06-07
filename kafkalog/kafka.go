@@ -135,6 +135,36 @@ type kafkaProducer struct {
 	sync.Mutex
 }
 
+func (kp *kafkaProducer) initAsyncProducer(hosts []string) error {
+	kp.Lock()
+	if kp.producer != nil {
+		kp.Unlock()
+		return nil
+	}
+	kp.Unlock()
+
+	producer, err := NewAsyncProducer(hosts)
+	if err != nil {
+		glog.Errorf("[producer]: fail to connect to kafka: %v", err)
+		return err
+	}
+	glog.Infof("Connected to kafka")
+
+	kp.Lock()
+	if kp.producer == nil {
+		kp.producer = producer
+	} else {
+		// Can not happen
+		glog.V(3).Infof("kafka producer %v alreay connected", kp)
+		go func() {
+			producer.Close()
+		}()
+	}
+	kp.Unlock()
+
+	return nil
+}
+
 func Init(hosts []string, duration, queueLen int) error {
 	if queueLen == 0 {
 		return fmt.Errorf("please specify the length of log channel")
@@ -144,14 +174,11 @@ func Init(hosts []string, duration, queueLen int) error {
 		return fmt.Errorf("please specify the duration of kafka health checker")
 	}
 
-	for i := 0; i < conn_number; i++ {
-		producer, err := NewAsyncProducer(hosts)
-		if err != nil {
-			return fmt.Errorf("[producer]: fail to connect to kafka: %v", err)
-		}
+	var retErr error = nil
 
+	for i := 0; i < conn_number; i++ {
 		kp := &kafkaProducer{
-			producer: producer,
+			producer: nil,
 			logChan:  make(chan *logger.Message, queueLen),
 		}
 
@@ -197,38 +224,18 @@ func Init(hosts []string, duration, queueLen int) error {
 		go func() {
 			ticker := time.NewTicker(time.Duration(duration) * time.Second)
 			for _ = range ticker.C {
+				kp.initAsyncProducer(hosts)
 				glog.V(3).Infof("producer %v: length of chan: %v, %v producers %v",
 					kp, len(kp.logChan), number, kp.producer)
-
-				kp.Lock()
-				if kp.producer == nil {
-					kp.Unlock()
-
-					producer, err := NewAsyncProducer(hosts)
-					if err != nil {
-						glog.Errorf("[producer]: fail to connect to kafka: %v", err)
-						continue
-					} else {
-						glog.Infof("Connected to kafka")
-					}
-
-					kp.Lock()
-					if kp.producer == nil {
-						kp.producer = producer
-					} else {
-						// Can not happen
-						glog.V(3).Infof("kafka producer %v alreay connected", kp)
-						go func() {
-							producer.Close()
-						}()
-					}
-				}
-				kp.Unlock()
 			}
 		}()
+
+		if err := kp.initAsyncProducer(hosts); err != nil {
+			retErr = err
+		}
 	}
 
-	return nil
+	return retErr
 }
 
 type KafkaLogs struct {
